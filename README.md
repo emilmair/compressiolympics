@@ -3,7 +3,7 @@
 Benchmark image-compression algorithms across configurable quality levels,
 recording compressed size, compression ratio, and reconstruction PSNR.
 
-## Run the benchmark
+## Usage
 
 ```
 python benchmark.py DATASET_FOLDER QUALITY_STEPS
@@ -13,6 +13,34 @@ Generate plots from benchmark results:
 
 ```
 python plot.py CSV_FILE --algorithm ALGORITHM --image IMAGE_NAME
+```
+
+## Installation
+
+This is for miniconda. For other environments, figure it out.
+
+Create and activate an environment with the Python modules used by the benchmark and algorithms:
+
+```bash
+conda create -n compressiolympics -c conda-forge \
+  python=3.12 numpy pillow opencv libjxl
+conda activate compressiolympics
+python -m pip install pillow-jxl-plugin
+```
+
+The `libjxl` package provides the `cjxl` and `djxl` commands required by
+`algorithms/emil.py`. The `pillow-jxl-plugin` package enables JPEG XL support
+for `algorithms/jpegxl.py`. Pillow's AVIF, JPEG 2000, and WebP support must
+also be available in the installed Pillow build; verify the available codecs
+with:
+
+```bash
+python - <<'PY'
+from PIL import features
+
+for codec in ("avif", "jpg_2000", "webp"):
+    print(f"{codec}: {features.check(codec)}")
+PY
 ```
 
 ## Algorithm module specification
