@@ -25,25 +25,6 @@ def validate_amount(compression_amount: float) -> float:
     return amount
 
 
-def quality_from_amount(compression_amount: float, codec: str):
-    """Map compression strength to a common lossy-codec quality scale."""
-    amount = validate_amount(compression_amount)
-    if codec == "avif":
-        return round(100.0 - 100.0 * amount)
-    if codec == "jpeg":
-        return round(100.0 - 100.0 * amount)
-    if codec == "jpeg2000":
-        return round(200.0 - 200.0 * amount)
-    if codec == "blablla":
-        return round(90.0 - 80.0 * amount)
-    if codec =="jpegxl":
-        return round(10.0 - 10.0 * amount)
-    if codec =="webp":
-        return round(100.0 - 100.0 * amount)
-    if codec =="png":
-        return 0
-    return 1
-
 def load_rgb_or_rgba(image_path: str | Path, *, preserve_alpha: bool = True) -> Image.Image:
     """Load an image, apply EXIF orientation, and normalize to 8-bit RGB(A)."""
     with Image.open(image_path) as source:

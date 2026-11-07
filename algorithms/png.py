@@ -19,6 +19,7 @@ def compress(
     not a lossy quality setting. PSNR should therefore be infinite for the
     8-bit RGB(A) content that the benchmark compares.
     """
+    validate_amount(compression_amount)
     image = load_rgb_or_rgba(image_path, preserve_alpha=True)
     image.save(
         output_path,

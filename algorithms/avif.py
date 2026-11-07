@@ -7,7 +7,6 @@ from pathlib import Path
 from ._utils import (
     decode_to_png,
     load_rgb_or_rgba,
-    quality_from_amount,
     require_pillow_feature,
     validate_amount,
 )
@@ -20,11 +19,12 @@ def compress(
 ) -> None:
     """Encode as AVIF; preserve transparency when present."""
     require_pillow_feature("avif", "AVIF")
+    amount = validate_amount(compression_amount)
     image = load_rgb_or_rgba(image_path, preserve_alpha=True)
     image.save(
         output_path,
         format="AVIF",
-        quality=quality_from_amount(compression_amount, "avif"),
+        quality=round(100.0 - 100.0 * amount),
         speed=6,
     )
 

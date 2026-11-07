@@ -7,7 +7,6 @@ from pathlib import Path
 from ._utils import (
     decode_to_png,
     load_rgb_or_rgba,
-    quality_from_amount,
     require_pillow_feature,
     validate_amount,
 )
@@ -25,8 +24,9 @@ def compress(
     """
     require_pillow_feature("jpg_2000", "JPEG 2000")
 
+    amount = validate_amount(compression_amount)
     image = load_rgb_or_rgba(image_path, preserve_alpha=True)
-    target_rate = quality_from_amount(compression_amount, "jpeg2000")
+    target_rate = round(200.0 - 200.0 * amount)
 
     image.save(
         output_path,

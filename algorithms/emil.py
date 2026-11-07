@@ -13,6 +13,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from ._utils import validate_amount
+
 
 MAGIC = b"NNCOMP32"
 VERSION = 1
@@ -51,7 +53,7 @@ def _save_residual(path: Path, residual: np.ndarray) -> None:
 
 
 def compress(image_path: str | Path, output_path: str | Path, amount: float) -> None:
-
+    amount = validate_amount(amount)
     base = 128
     q = amount * 128
 

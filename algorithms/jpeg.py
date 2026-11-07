@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from ._utils import decode_to_png, load_rgb_or_rgba, quality_from_amount, validate_amount
+from ._utils import decode_to_png, load_rgb_or_rgba, validate_amount
 
 
 def compress(
@@ -19,8 +19,8 @@ def compress(
     JPEG does not support transparency, so inputs are converted to RGB.
     Higher compression_amount values map to lower JPEG quality.
     """
-    validate_amount(compression_amount)
-    quality = quality_from_amount(compression_amount, "jpeg")
+    amount = validate_amount(compression_amount)
+    quality = round(100.0 - 100.0 * amount)
     image = load_rgb_or_rgba(image_path, preserve_alpha=False)
     image.save(
         output_path,

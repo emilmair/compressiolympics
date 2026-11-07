@@ -19,7 +19,7 @@ except ImportError as exc:  # pragma: no cover - depends on user's environment
         "    python -m pip install --upgrade pillow-jxl-plugin"
     ) from exc
 
-from ._utils import load_rgb_or_rgba, quality_from_amount, validate_amount
+from ._utils import load_rgb_or_rgba, validate_amount
 
 
 def compress(
@@ -33,13 +33,13 @@ def compress(
     scale: lower amounts use higher quality, while higher amounts use lower
     quality and generally produce smaller files.
     """
-    # validate_amount(compression_amount)
+    amount = validate_amount(compression_amount)
     image = load_rgb_or_rgba(image_path, preserve_alpha=True)
 
     image.save(
         output_path,
         format="JXL",
-        quality=quality_from_amount(compression_amount, "jpegxl"),
+        quality=round(10.0 - 10.0 * amount),
     )
 
 

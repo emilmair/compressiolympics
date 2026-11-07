@@ -7,7 +7,6 @@ from pathlib import Path
 from ._utils import (
     decode_to_png,
     load_rgb_or_rgba,
-    quality_from_amount,
     require_pillow_feature,
     validate_amount,
 )
@@ -20,12 +19,13 @@ def compress(
 ) -> None:
     """Encode as lossy WebP; preserve transparency when present."""
     require_pillow_feature("webp", "WebP")
+    amount = validate_amount(compression_amount)
     image = load_rgb_or_rgba(image_path, preserve_alpha=True)
     image.save(
         output_path,
         format="WEBP",
         lossless=False,
-        quality=quality_from_amount(compression_amount, "webp"),
+        quality=round(100.0 - 100.0 * amount),
         method=6,
         exact=True,
     )
