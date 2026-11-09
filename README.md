@@ -6,13 +6,23 @@ recording compressed size, compression ratio, and reconstruction PSNR.
 ## Usage
 
 ```
-python benchmark.py DATASET_FOLDER QUALITY_STEPS
+python benchmark.py DATASET_NAME ALGORITHM QUALITY_STEPS
 ```
 
-Generate plots from benchmark results:
+The dataset must exist at `datasets/DATASET_NAME/`. Run one algorithm against
+that dataset. Results are written to
+`benchmark_results/DATASET_NAME/ALGORITHM.csv`.
+
+Generate a plot for all algorithms benchmarked on a dataset:
 
 ```
-python plot.py CSV_FILE --algorithm ALGORITHM --image IMAGE_NAME
+python plot.py DATASET_NAME
+```
+
+Optionally filter the plot by algorithm and/or image:
+
+```
+python plot.py DATASET_NAME --algorithm ALGORITHM --image IMAGE_NAME
 ```
 
 ## Installation

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate scatter plots from benchmark result CSV files."""
+"""Generate scatter plots from benchmark results for a dataset."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parent
 PLOTS_DIR = ROOT / "benchmark_plots"
+RESULTS_DIR = ROOT / "benchmark_results"
 
 
 def read_results_csv(path: Path) -> list[dict[str, object]]:
@@ -30,6 +31,46 @@ def read_results_csv(path: Path) -> list[dict[str, object]]:
             missing = ", ".join(sorted(missing_fields))
             raise ValueError(f"CSV is missing required field(s): {missing}")
         return list(reader)
+
+
+def dataset_csv_paths(
+    dataset_name: str,
+    algorithms: list[str] | None,
+) -> list[Path]:
+    """Return result CSVs for a dataset and optional algorithm filters."""
+    dataset_dir = RESULTS_DIR / dataset_name
+    if not dataset_dir.is_dir():
+        raise FileNotFoundError(f"benchmark dataset results not found: {dataset_dir}")
+
+    if algorithms:
+        paths = [dataset_dir / f"{algorithm}.csv" for algorithm in algorithms]
+        missing = [path.name for path in paths if not path.is_file()]
+        if missing:
+            raise FileNotFoundError(
+                f"algorithm result CSV not found in {dataset_dir}: "
+                + ", ".join(missing)
+            )
+        return paths
+
+    paths = sorted(
+        path
+        for path in dataset_dir.glob("*.csv")
+        if not path.name.endswith("_failures.csv")
+    )
+    if not paths:
+        raise FileNotFoundError(f"no algorithm result CSVs found in {dataset_dir}")
+    return paths
+
+
+def read_dataset_results(
+    dataset_name: str,
+    algorithms: list[str] | None,
+) -> list[dict[str, object]]:
+    """Read and combine algorithm results for a dataset."""
+    results: list[dict[str, object]] = []
+    for path in dataset_csv_paths(dataset_name, algorithms):
+        results.extend(read_results_csv(path))
+    return results
 
 
 def filter_results(
@@ -53,12 +94,12 @@ def filename_part(value: str) -> str:
 
 
 def output_path(
-    csv_path: Path,
+    dataset_name: str,
     algorithms: list[str] | None,
     images: list[str] | None,
 ) -> Path:
     """Build a plot path that distinguishes the selected filters."""
-    parts = [csv_path.stem]
+    parts = [filename_part(dataset_name)]
     if algorithms:
         parts.append(
             "algorithms-" + "-".join(filename_part(value) for value in algorithms)
@@ -115,13 +156,11 @@ def create_scatter_plot(results: list[dict[str, object]], path: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate a scatter plot from a benchmark results CSV."
+        description="Generate a scatter plot from benchmark results for a dataset."
     )
     parser.add_argument(
-        "csv_path",
-        type=Path,
-        metavar="CSV",
-        help="benchmark results CSV to plot",
+        "dataset_name",
+        help="dataset name used by the benchmark",
     )
     parser.add_argument(
         "--algorithm",
@@ -140,11 +179,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        results = read_results_csv(args.csv_path)
+        results = read_dataset_results(args.dataset_name, args.algorithms)
         results = filter_results(results, args.algorithms, args.images)
         if not results:
             raise ValueError("the selected algorithm/image filters matched no CSV rows")
-        path = output_path(args.csv_path, args.algorithms, args.images)
+        path = output_path(args.dataset_name, args.algorithms, args.images)
         create_scatter_plot(results, path)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))

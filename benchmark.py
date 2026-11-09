@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Benchmark image compression algorithms.
+"""Benchmark one image compression algorithm.
 
 Expected project layout:
 
     project/
+      datasets/
+        DATASET_NAME/
+          image.png
       algorithms/
         algorithm_a.py   # defines compress(image_path, output_path, compression_amount)
                            # and decompress(compressed_path, png_output_path)
@@ -12,13 +15,14 @@ Expected project layout:
 
 Run from anywhere with:
 
-    python benchmark.py dataset 10
+    python benchmark.py DATASET_NAME ALGORITHM 10
 
-The first argument is the dataset directory and the second is the number of
-evenly spaced compression amounts. For N=10, amounts are 0.1, 0.2, ..., 1.0.
+The benchmark runs the selected algorithm against every image in the dataset
+at evenly spaced compression amounts. For N=10, amounts are 0.1, 0.2, ...,
+1.0.
 
-Results are written to a numbered and timestamped CSV in benchmark_results/,
-with failures written to a matching failure CSV.
+Results are written to benchmark_results/DATASET/ALGORITHM.csv, with failures
+written to a matching failure CSV when necessary.
 """
 
 from __future__ import annotations
@@ -27,10 +31,8 @@ import argparse
 import csv
 import importlib
 import math
-import re
 import sys
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -40,6 +42,7 @@ from PIL import Image, ImageOps
 
 ROOT = Path(__file__).resolve().parent
 ALGORITHMS_DIR = ROOT / "algorithms"
+DATASETS_DIR = ROOT / "datasets"
 RESULTS_DIR = ROOT / "benchmark_results"
 
 IMAGE_EXTENSIONS = {
@@ -114,6 +117,17 @@ def discover_algorithms() -> list[Algorithm]:
     return algorithms
 
 
+def select_algorithm(algorithms: list[Algorithm], name: str) -> Algorithm:
+    """Return the named algorithm or raise a clear selection error."""
+    for algorithm in algorithms:
+        if algorithm[0] == name:
+            return algorithm
+    available = ", ".join(algorithm[0] for algorithm in algorithms)
+    if available:
+        raise ValueError(f"unknown algorithm {name!r}; available algorithms: {available}")
+    raise ValueError("no loadable algorithms were found")
+
+
 def discover_images(dataset_dir: Path) -> list[Path]:
     """Return supported image files under the dataset directory."""
     if not dataset_dir.is_dir():
@@ -168,102 +182,97 @@ def calculate_psnr(original_path: Path, reconstruction_path: Path) -> float:
 
 def run_benchmark(
     subdivisions: int,
-    algorithms: list[Algorithm],
+    algorithm: Algorithm,
     images: list[Path],
     dataset_dir: Path,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Run every algorithm against every image at every compression amount."""
+    """Run one algorithm against every image at every compression amount."""
     results: list[dict[str, object]] = []
     failures: list[dict[str, object]] = []
     amounts = [step / subdivisions for step in range(1, subdivisions + 1)]
 
+    algorithm_name, compress, decompress = algorithm
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-
-    total = len(algorithms) * len(images) * len(amounts)
+    total = len(images) * len(amounts)
     completed = 0
 
-    for algorithm_name, compress, decompress in algorithms:
-        for image_path in images:
-            input_size = image_path.stat().st_size
-            relative_image = image_path.relative_to(dataset_dir)
+    for image_path in images:
+        input_size = image_path.stat().st_size
+        relative_image = image_path.relative_to(dataset_dir)
 
-            for amount in amounts:
-                completed += 1
-                print(
-                    f"[{completed}/{total}] {algorithm_name} | "
-                    f"{relative_image} | amount={amount:.6g}"
-                )
+        for amount in amounts:
+            completed += 1
+            print(
+                f"[{completed}/{total}] {algorithm_name} | "
+                f"{relative_image} | amount={amount:.6g}"
+            )
 
-                try:
-                    # A fresh directory per run prevents stale files and name collisions.
-                    with tempfile.TemporaryDirectory(
-                        prefix="trial_", dir=RESULTS_DIR
-                    ) as temporary_directory:
-                        # This is the compressed artifact. Keep the source extension
-                        # in case the compressor uses it to choose an encoding.
-                        compressed_path = (
-                            Path(temporary_directory)
-                            / f"compressed{image_path.suffix.lower()}"
+            try:
+                # A fresh directory per run prevents stale files and name collisions.
+                with tempfile.TemporaryDirectory(
+                    prefix="trial_", dir=RESULTS_DIR
+                ) as temporary_directory:
+                    # Keep the source extension in case the compressor uses it to
+                    # choose an encoding.
+                    compressed_path = (
+                        Path(temporary_directory)
+                        / f"compressed{image_path.suffix.lower()}"
+                    )
+                    # The decompressor must write a normal PNG for pixel comparison.
+                    decompressed_path = Path(temporary_directory) / "reconstructed.png"
+
+                    compress(image_path, compressed_path, amount)
+
+                    if not compressed_path.is_file():
+                        raise FileNotFoundError(
+                            "algorithm did not create compressed file: "
+                            f"{compressed_path.name}"
                         )
-                        # The decompressor must write a normal PNG for pixel comparison.
-                        decompressed_path = Path(temporary_directory) / "reconstructed.png"
 
-                        compress(image_path, compressed_path, amount)
+                    compressed_size = compressed_path.stat().st_size
+                    if compressed_size <= 0:
+                        raise ValueError("algorithm produced an empty compressed file")
 
-                        if not compressed_path.is_file():
-                            raise FileNotFoundError(
-                                "algorithm did not create compressed file: "
-                                f"{compressed_path.name}"
-                            )
+                    decompress(compressed_path, decompressed_path)
 
-                        compressed_size = compressed_path.stat().st_size
-                        if compressed_size <= 0:
-                            raise ValueError("algorithm produced an empty compressed file")
-
-                        decompress(compressed_path, decompressed_path)
-
-                        if not decompressed_path.is_file():
-                            raise FileNotFoundError(
-                                "algorithm did not create decompressed PNG: "
-                                f"{decompressed_path.name}"
-                            )
-
-                        decompressed_size = decompressed_path.stat().st_size
-                        if decompressed_size <= 0:
-                            raise ValueError("algorithm produced an empty decompressed PNG")
-
-                        # PSNR compares the original against the decoded reconstruction,
-                        # never against the compressed bitstream itself.
-                        psnr = calculate_psnr(image_path, decompressed_path)
-                        compression_ratio = input_size / compressed_size
-
-                        results.append(
-                            {
-                                "algorithm": algorithm_name,
-                                "image": relative_image.as_posix(),
-                                "compression_amount": amount,
-                                "input_size_bytes": input_size,
-                                # output_size_bytes is the size of the compressed artifact
-                                # and is the denominator of compression_ratio.
-                                "output_size_bytes": compressed_size,
-                                "decompressed_size_bytes": decompressed_size,
-                                "compression_ratio": compression_ratio,
-                                "psnr_db": psnr,
-                            }
+                    if not decompressed_path.is_file():
+                        raise FileNotFoundError(
+                            "algorithm did not create decompressed PNG: "
+                            f"{decompressed_path.name}"
                         )
-                except Exception as exc:
-                    failures.append(
+
+                    decompressed_size = decompressed_path.stat().st_size
+                    if decompressed_size <= 0:
+                        raise ValueError("algorithm produced an empty decompressed PNG")
+
+                    psnr = calculate_psnr(image_path, decompressed_path)
+                    compression_ratio = input_size / compressed_size
+
+                    results.append(
                         {
                             "algorithm": algorithm_name,
                             "image": relative_image.as_posix(),
                             "compression_amount": amount,
-                            "error": f"{type(exc).__name__}: {exc}",
+                            "input_size_bytes": input_size,
+                            "output_size_bytes": compressed_size,
+                            "decompressed_size_bytes": decompressed_size,
+                            "compression_ratio": compression_ratio,
+                            "psnr_db": psnr,
                         }
                     )
-                    print(
-                        f"  FAILED: {type(exc).__name__}: {exc}",
-                        file=sys.stderr,
-                    )
+            except Exception as exc:
+                failures.append(
+                    {
+                        "algorithm": algorithm_name,
+                        "image": relative_image.as_posix(),
+                        "compression_amount": amount,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                print(
+                    f"  FAILED: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
 
     return results, failures
 
@@ -275,40 +284,30 @@ def write_csv(path: Path, rows: list[dict[str, object]], fieldnames: list[str]) 
         writer.writerows(rows)
 
 
-def next_benchmark_number() -> int:
-    """Return the next number for a benchmark result file."""
-    numbers = []
-    for path in RESULTS_DIR.glob("benchmark_*.csv"):
-        match = re.fullmatch(r"benchmark_(\d+)(?:_.*)?\.csv", path.name)
-        if match:
-            numbers.append(int(match.group(1)))
-    return max(numbers, default=0) + 1
-
-
-def benchmark_output_paths() -> tuple[Path, Path]:
-    """Return unique result and failure paths for a benchmark run."""
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    number = next_benchmark_number()
-    timestamp = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
-    stem = f"benchmark_{number:03d}_{timestamp}"
+def benchmark_output_paths(dataset_dir: Path, algorithm_name: str) -> tuple[Path, Path]:
+    """Return result and failure paths for a dataset and algorithm."""
+    dataset_results_dir = RESULTS_DIR / dataset_dir.name
+    dataset_results_dir.mkdir(parents=True, exist_ok=True)
     return (
-        RESULTS_DIR / f"{stem}.csv",
-        RESULTS_DIR / f"{stem}_failures.csv",
+        dataset_results_dir / f"{algorithm_name}.csv",
+        dataset_results_dir / f"{algorithm_name}_failures.csv",
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Benchmark every algorithm in ./algorithms against every image in "
-            "the supplied dataset directory at evenly spaced compression amounts "
-            "from 1/N to 1.0."
+            "Benchmark one algorithm against every image in a dataset at evenly "
+            "spaced compression amounts from 1/N to 1.0."
         )
     )
     parser.add_argument(
-        "dataset_dir",
-        type=Path,
-        help="directory containing the images to benchmark",
+        "dataset_name",
+        help="dataset folder name under the datasets directory",
+    )
+    parser.add_argument(
+        "algorithm",
+        help="algorithm module name from the algorithms directory",
     )
     parser.add_argument(
         "subdivisions",
@@ -316,27 +315,30 @@ def main() -> int:
         help="number of quality steps (e.g. 10 runs amounts 0.1 through 1.0)",
     )
     args = parser.parse_args()
+    if Path(args.dataset_name).name != args.dataset_name:
+        parser.error("dataset name must be a single folder name")
+    dataset_dir = DATASETS_DIR / args.dataset_name
 
     algorithms = discover_algorithms()
-    images = discover_images(args.dataset_dir)
+    try:
+        algorithm = select_algorithm(algorithms, args.algorithm)
+    except ValueError as exc:
+        parser.error(str(exc))
 
-    if not algorithms:
-        print(
-            f"No algorithms with callable compress() and decompress() functions found in {ALGORITHMS_DIR}",
-            file=sys.stderr,
-        )
-        return 1
+    images = discover_images(dataset_dir)
+
     if not images:
-        print(f"No supported images found in {args.dataset_dir}", file=sys.stderr)
+        print(f"No supported images found in {dataset_dir}", file=sys.stderr)
         return 1
 
-    print(f"Found {len(algorithms)} algorithm(s) and {len(images)} image(s).")
+    print(f"Found algorithm {args.algorithm} and {len(images)} image(s).")
     results, failures = run_benchmark(
-        args.subdivisions, algorithms, images, args.dataset_dir
+        args.subdivisions, algorithm, images, dataset_dir
     )
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    results_csv, failures_csv = benchmark_output_paths()
+    results_csv, failures_csv = benchmark_output_paths(
+        dataset_dir, args.algorithm
+    )
 
     result_fields = [
         "algorithm",
